@@ -1,0 +1,8 @@
+torch>=2.0.0
+torchvision>=0.15.0
+realesrgan>=0.3.0
+opencv-python>=4.7.0
+tqdm
+numpy
+basicsr>=1.4.2
+gfpgan>=1.3.5
