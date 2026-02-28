@@ -1,22 +1,25 @@
-# AI Video Upscaler (Real-ESRGAN)
+# AI Media Upscaler (Real-ESRGAN)
 
-Upscale videos to 2x or 4x resolution using Real-ESRGAN AI models.
-For example, upscale 1080p → 4K, or 720p → 1440p.
+Upscale images and videos to 2x or 4x resolution using Real-ESRGAN AI models.
+For example, upscale 1080p → 4K, or enhance a photo to 4x its original size.
 
 ## Features
 
+- **Image & Video Upscaling** — supports both images and videos
 - **4x / 2x Upscaling** using Real-ESRGAN models
 - **Anime-optimized model** for animation content
-- **Audio preservation** — original audio is kept
+- **Folder batch mode** — scan a folder and upscale all media
+- **Audio preservation** — original audio is kept for videos
 - **FP16 precision** for fast CUDA inference
 - **Tiling support** for low VRAM GPUs
 - **Custom target resolution** override
+- **Auto-detect** input type (image vs video)
 
 ## Requirements
 
 - Python 3.8+
 - NVIDIA GPU with CUDA (recommended)
-- FFmpeg in system PATH
+- FFmpeg in system PATH (for video processing)
 
 ## Installation
 
@@ -27,7 +30,10 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Upscale to 4x (e.g., 1080p -> 4K)
+# Upscale a single image
+python upscale.py -i photo.jpg -o photo_4k.png
+
+# Upscale video to 4x (e.g., 1080p -> 4K)
 python upscale.py -i input.mp4 -o output_4k.mp4
 
 # Upscale to 2x
@@ -36,15 +42,15 @@ python upscale.py -i input.mp4 -o output.mp4 --model general-x2
 # Anime content
 python upscale.py -i anime.mp4 -o anime_4k.mp4 --model anime-x4
 
-# Scan folder and upscale all videos (saves to "upscaled" subfolder)
-python upscale.py -f /path/to/videos
-python upscale.py --folder /path/to/videos --model general-x2
+# Scan folder and upscale all images & videos (saves to "upscaled" subfolder)
+python upscale.py -f /path/to/media
+python upscale.py --folder /path/to/media --model general-x2
 
 # Low VRAM (use tiling)
 python upscale.py -i input.mp4 -o output.mp4 --tile 256
 
 # Force 4K resolution
-python upscale.py -i input.mp4 -o output.mp4 --target-res 3840x2160
+python upscale.py -i photo.jpg -o photo_4k.png --target-res 3840x2160
 
 # List models
 python upscale.py --list-models
@@ -54,19 +60,26 @@ python upscale.py --list-models
 
 | Model | Scale | Best For |
 |---|---|---|
-| `general-x4` | 4x | Real-world video (default) |
+| `general-x4` | 4x | Real-world content (default) |
 | `general-x2` | 2x | Gentle upscale |
 | `anime-x4` | 4x | Anime / animation |
+
+## Supported Formats
+
+| Type | Extensions |
+|---|---|
+| **Images** | `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tiff`, `.tif` |
+| **Videos** | `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.ts` |
 
 ## Arguments
 
 | Arg | Default | Description |
 |---|---|---|
-| `-i, --input` | required | Input video path |
-| `-o, --output` | auto | Output video path |
-| `-f, --folder` | — | Scan folder and upscale all videos |
+| `-i, --input` | required | Input image or video path |
+| `-o, --output` | auto | Output path |
+| `-f, --folder` | — | Scan folder and upscale all media |
 | `--model` | `general-x4` | Model name |
 | `--tile` | `0` (auto) | Tile size for low VRAM |
 | `--target-res` | — | Force output resolution (e.g., `3840x2160`) |
-| `--quality` | `18` | CRF quality (lower = better) |
+| `--quality` | `18` | CRF quality for video (lower = better) |
 | `--no-fp16` | — | Disable FP16 |

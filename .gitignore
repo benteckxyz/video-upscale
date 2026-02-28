@@ -22,6 +22,15 @@ weights/
 *.m4v
 *.ts
 
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.tiff
+*.tif
+
 # OS
 .DS_Store
 Thumbs.db
