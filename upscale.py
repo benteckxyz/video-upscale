@@ -13,6 +13,7 @@ import numpy as np
 from tqdm import tqdm
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
+from gfpgan import GFPGANer
 import subprocess
 import tempfile
 import shutil
@@ -105,8 +106,8 @@ def merge_audio(video_path, audio_path, output_path):
         return False
 
 
-def setup_upscaler(model_name, gpu_id=0, fp16=True, tile=0):
-    """Initialize the Real-ESRGAN upscaler."""
+def setup_upscaler(model_name, gpu_id=0, fp16=True, tile=0, face_enhance=False):
+    """Initialize the Real-ESRGAN upscaler and optionally GFPGAN face enhancer."""
     if model_name not in MODELS:
         raise ValueError(f"Unknown model: {model_name}. Available: {list(MODELS.keys())}")
 
@@ -128,8 +129,17 @@ def setup_upscaler(model_name, gpu_id=0, fp16=True, tile=0):
         gpu_id=gpu_id if torch.cuda.is_available() else None,
     )
 
-    # Optional face enhancement
+    # Optional GFPGAN face enhancement
     face_enhancer = None
+    if face_enhance:
+        face_enhancer = GFPGANer(
+            model_path="https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth",
+            upscale=config["scale"],
+            arch="clean",
+            channel_multiplier=2,
+            bg_upsampler=upsampler,
+        )
+        print("  Face enhance: GFPGAN v1.3 loaded")
 
     return upsampler, face_enhancer, config["scale"]
 
@@ -145,7 +155,8 @@ def is_video_file(filepath):
 
 
 def upscale_image(input_path, output_path, model_name="general-x4",
-                  gpu_id=0, fp16=True, tile=0, target_res=None):
+                  gpu_id=0, fp16=True, tile=0, target_res=None,
+                  face_enhance=False):
     """
     Upscale a single image using Real-ESRGAN.
 
@@ -157,6 +168,7 @@ def upscale_image(input_path, output_path, model_name="general-x4",
         fp16: Use half precision
         tile: Tile size (0=auto)
         target_res: Target resolution as "WxH"
+        face_enhance: Enable GFPGAN face enhancement
     """
     img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
     if img is None:
@@ -170,12 +182,15 @@ def upscale_image(input_path, output_path, model_name="general-x4",
     print(f"  Input:       {input_path}")
     print(f"  Resolution:  {w}x{h}")
     print(f"  Model:       {model_name} ({MODELS[model_name]['description']})")
+    print(f"  Face enhance: {'GFPGAN' if face_enhance else 'Off'}")
     print(f"  FP16:        {fp16}")
     print(f"  GPU:         {'CUDA' if torch.cuda.is_available() else 'CPU'}")
 
     # Setup upscaler
     print(f"\n  Loading model...")
-    upsampler, _, scale = setup_upscaler(model_name, gpu_id, fp16, tile)
+    upsampler, face_enhancer, scale = setup_upscaler(
+        model_name, gpu_id, fp16, tile, face_enhance=face_enhance
+    )
 
     out_w = w * scale
     out_h = h * scale
@@ -191,13 +206,23 @@ def upscale_image(input_path, output_path, model_name="general-x4",
     # Upscale
     print("  Upscaling...")
     try:
-        output, _ = upsampler.enhance(img, outscale=scale)
+        if face_enhancer is not None:
+            _, _, output = face_enhancer.enhance(
+                img, has_aligned=False, only_center_face=False, paste_back=True
+            )
+        else:
+            output, _ = upsampler.enhance(img, outscale=scale)
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
             print(f"  ⚠ GPU OOM. Trying with tile=256...")
             torch.cuda.empty_cache()
             upsampler.tile_size = 256
-            output, _ = upsampler.enhance(img, outscale=scale)
+            if face_enhancer is not None:
+                _, _, output = face_enhancer.enhance(
+                    img, has_aligned=False, only_center_face=False, paste_back=True
+                )
+            else:
+                output, _ = upsampler.enhance(img, outscale=scale)
         else:
             raise
 
@@ -246,12 +271,15 @@ def upscale_video(input_path, output_path, model_name="general-x4",
     print(f"  FPS:         {info['fps']}")
     print(f"  Frames:      {info['total_frames']}")
     print(f"  Model:       {model_name} ({MODELS[model_name]['description']})")
+    print(f"  Face enhance: {'GFPGAN' if face_enhance else 'Off'}")
     print(f"  FP16:        {fp16}")
     print(f"  GPU:         {'CUDA' if torch.cuda.is_available() else 'CPU'}")
 
     # Setup upscaler
     print(f"\n  Loading model...")
-    upsampler, face_enhancer, scale = setup_upscaler(model_name, gpu_id, fp16, tile)
+    upsampler, face_enhancer, scale = setup_upscaler(
+        model_name, gpu_id, fp16, tile, face_enhance=face_enhance
+    )
 
     out_width = info["width"] * scale
     out_height = info["height"] * scale
@@ -301,13 +329,23 @@ def upscale_video(input_path, output_path, model_name="general-x4",
 
             # Upscale frame
             try:
-                output, _ = upsampler.enhance(frame, outscale=scale)
+                if face_enhancer is not None:
+                    _, _, output = face_enhancer.enhance(
+                        frame, has_aligned=False, only_center_face=False, paste_back=True
+                    )
+                else:
+                    output, _ = upsampler.enhance(frame, outscale=scale)
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
                     print(f"\n  ⚠ GPU OOM at frame {frame_idx}. Trying with tile=256...")
                     torch.cuda.empty_cache()
                     upsampler.tile_size = 256
-                    output, _ = upsampler.enhance(frame, outscale=scale)
+                    if face_enhancer is not None:
+                        _, _, output = face_enhancer.enhance(
+                            frame, has_aligned=False, only_center_face=False, paste_back=True
+                        )
+                    else:
+                        output, _ = upsampler.enhance(frame, outscale=scale)
                 else:
                     raise
 
@@ -371,7 +409,8 @@ def upscale_video(input_path, output_path, model_name="general-x4",
 
 
 def scan_and_upscale(folder_path, model_name="general-x4", gpu_id=0,
-                     fp16=True, tile=0, target_res=None, output_quality=18):
+                     fp16=True, tile=0, target_res=None, output_quality=18,
+                     face_enhance=False):
     """
     Scan a folder for video and image files and upscale them all.
     Outputs are saved to a 'upscaled' subfolder.
@@ -440,6 +479,7 @@ def scan_and_upscale(folder_path, model_name="general-x4", gpu_id=0,
                     fp16=fp16,
                     tile=tile,
                     target_res=target_res,
+                    face_enhance=face_enhance,
                 )
             else:
                 upscale_video(
@@ -451,6 +491,7 @@ def scan_and_upscale(folder_path, model_name="general-x4", gpu_id=0,
                     tile=tile,
                     target_res=target_res,
                     output_quality=output_quality,
+                    face_enhance=face_enhance,
                 )
             results.append((filename, "success"))
         except Exception as e:
@@ -490,8 +531,14 @@ Examples:
   # Upscale a single image
   python upscale.py -i photo.jpg -o photo_4k.png
 
+  # Upscale with face enhancement (natural skin)
+  python upscale.py -i photo.jpg -o photo_4k.png --face-enhance
+
   # Upscale video to 4x resolution (e.g., 1080p -> 4K)
   python upscale.py -i input.mp4 -o output_4k.mp4
+
+  # Upscale video with face enhancement
+  python upscale.py -i input.mp4 -o output_4k.mp4 --face-enhance
 
   # Upscale to 2x resolution
   python upscale.py -i input.mp4 -o output.mp4 --model general-x2
@@ -501,7 +548,7 @@ Examples:
 
   # Scan folder and upscale all images & videos
   python upscale.py -f /path/to/media
-  python upscale.py --folder /path/to/media --model general-x2
+  python upscale.py --folder /path/to/media --face-enhance
 
   # Low VRAM mode (use tiling)
   python upscale.py -i input.mp4 -o output.mp4 --tile 256
@@ -531,6 +578,8 @@ Examples:
                         help="Target output resolution, e.g., '3840x2160' for 4K")
     parser.add_argument("--quality", type=int, default=18,
                         help="Output quality CRF (lower=better, default: 18)")
+    parser.add_argument("--face-enhance", action="store_true",
+                        help="Enhance faces using GFPGAN (fixes plastic/smooth skin)")
     parser.add_argument("--list-models", action="store_true",
                         help="List available models")
 
@@ -551,6 +600,7 @@ Examples:
             tile=args.tile,
             target_res=args.target_res,
             output_quality=args.quality,
+            face_enhance=args.face_enhance,
         )
         return
 
@@ -578,6 +628,7 @@ Examples:
             fp16=fp16,
             tile=args.tile,
             target_res=args.target_res,
+            face_enhance=args.face_enhance,
         )
     else:
         if not args.output:
@@ -593,6 +644,7 @@ Examples:
             tile=args.tile,
             target_res=args.target_res,
             output_quality=args.quality,
+            face_enhance=args.face_enhance,
         )
 
 
