@@ -170,7 +170,8 @@ def upscale_image(input_path, output_path, model_name="general-x4",
         target_res: Target resolution as "WxH"
         face_enhance: Enable GFPGAN face enhancement
     """
-    img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
+    # Use numpy buffer to support Unicode/special character paths on Windows
+    img = cv2.imdecode(np.fromfile(input_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
     if img is None:
         raise RuntimeError(f"Cannot open image: {input_path}")
 
@@ -230,8 +231,13 @@ def upscale_image(input_path, output_path, model_name="general-x4",
     if target_res and (output.shape[1] != final_w or output.shape[0] != final_h):
         output = cv2.resize(output, (final_w, final_h), interpolation=cv2.INTER_LANCZOS4)
 
-    # Save
-    cv2.imwrite(output_path, output)
+    # Save (use imencode + tofile to support Unicode paths on Windows)
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    ext = os.path.splitext(output_path)[1].lower() or ".png"
+    success, buf = cv2.imencode(ext, output)
+    if not success:
+        raise RuntimeError(f"Failed to encode image as {ext}")
+    buf.tofile(output_path)
 
     input_size = os.path.getsize(input_path) / (1024 * 1024)
     output_size = os.path.getsize(output_path) / (1024 * 1024)
